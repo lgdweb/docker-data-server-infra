@@ -11,6 +11,7 @@ services:
       - NET_RAW
     volumes:
       - '/srv/fail2ban/data:/data'
+      - '/srv/logs:/srv/logs:ro'
       - '/var/log:/var/log:ro'
     restart: unless-stopped
     environment:
@@ -37,8 +38,8 @@ services:
       - '81:81'
     volumes:
       - /srv/nginx-proxy-manager/data:/data
-      - /var/log/nginx-proxy-manager:/data/logs/
       - /srv/nginx-proxy-manager/data/letsencrypt:/etc/letsencrypt
+      - /srv/logs/nginx-proxy-manager:/data/logs/
     networks:
       - reverse-proxy-nw
   main:
@@ -47,7 +48,7 @@ services:
     networks:
       - reverse-proxy-nw
     volumes:
-      - /var/log/nginx:/var/log/nginx
+      - /srv/logs/nginx:/var/log/nginx
       - /etc/localtime:/etc/localtime:ro
       - /etc/timezone:/etc/timezone:ro
   agent:
