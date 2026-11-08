@@ -22,7 +22,7 @@ services:
       retries: 3
 
   fail2ban:
-    image: crazymax/fail2ban:1.1.0
+    image: crazymax/fail2ban:1.1.1
     container_name: fail2ban
     depends_on:
       msmtpd:
