@@ -45,8 +45,8 @@ services:
       - TZ=Europe/Paris
       - F2B_LOG_TARGET=STDOUT
       - F2B_LOG_LEVEL=INFO
-      - F2B_ACTION=%(action_mwl)s
-      - F2B_DEST_EMAIL=${F2B_DEST_EMAIL}
+      # No F2B_ACTION / F2B_DEST_EMAIL here: the image entrypoint does not read
+      # them. `action` and `destemail` live in fail2ban/data/jail.d/default.conf.
   manager:
     image: jc21/nginx-proxy-manager:2.14.0
     container_name: nginx-proxy-manager

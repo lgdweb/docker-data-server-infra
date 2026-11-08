@@ -128,13 +128,15 @@ docker network create reverse-proxy-nw
 
    ```bash
    cat > .env << 'EOF'
-   F2B_DEST_EMAIL=your-email@example.com
-   F2B_USER=your-smtp-user@example.com
-   F2B_PASSWORD=your-smtp-password
-   F2B_HOSTNAME=your-hostname.example.com
+   SMTP_USER=your-smtp-user@example.com
+   SMTP_PASSWORD=your-smtp-password
+   HOSTNAME=your-hostname
    EOF
    chmod 600 .env
    ```
+
+   `destemail`/`sender` are not environment variables: they live in
+   `fail2ban/data/jail.d/default.conf`.
 
 5. **Copy Fail2ban configuration into the persistent volume:**
 
@@ -168,7 +170,7 @@ docker network create reverse-proxy-nw
 
 | Property       | Value                           |
 | -------------- | ------------------------------- |
-| Image          | `crazymax/fail2ban:0.11.2`      |
+| Image          | `crazymax/fail2ban:1.1.1`       |
 | Container name | `fail2ban`                      |
 | Network mode   | `host`                          |
 | Capabilities   | `NET_ADMIN`, `NET_RAW`          |
@@ -313,22 +315,31 @@ Identifies known malicious user agents (200+ signatures), including:
 **iptables-docker** (`action.d/iptables-docker.conf`)
 
 Thin wrapper around the stock `iptables.conf` action: it only pins
-`type = multiport`, `chain = DOCKER-USER` and `blocktype = DROP`. All command
-logic (chain creation with `-C` guards, ban/unban, `ip6tables` handling) comes
-from upstream, nothing is duplicated.
+`type = multiport`, `chain = DOCKER-USER,INPUT` and `blocktype = DROP`. All
+command logic (chain creation with `-C` guards, ban/unban, comma-split of the
+chain list, `ip6tables` handling via `[Init?family=inet6]`) comes from
+upstream, nothing is duplicated.
 
 ```
-Start  -> Creates f2b-<name> chain, jumps to it from DOCKER-USER
+Start  -> Creates f2b-<name> chain, jumps to it from DOCKER-USER and INPUT
 Ban    -> Adds DROP rule for the offending IP in f2b-<name> chain
 Unban  -> Removes DROP rule for the IP
 Stop   -> Removes the jump, flushes and deletes the chain
 ```
 
 Why `DOCKER-USER` and not `FORWARD`: it is traversed after Docker DNAT and
-before Docker's own ACCEPT rules, so a ban does cut published container ports,
-but it leaves host services alone (SSH stays reachable from a banned host, and
-`sshd`/`recidive` keep banning in `INPUT`). A ban applied directly in `FORWARD`
-with `--dports 0:65535` blocks *every* forwarded port of the host instead.
+before Docker's own ACCEPT rules, so a ban does cut published container ports.
+A ban applied directly in `FORWARD` with `--dports 0:65535` would block *every*
+forwarded port of the host.
+
+Why `INPUT` as well: published ports are also served on `[::]` by
+`docker-proxy` in userspace, and the container network has no IPv6 DNAT, so v6
+traffic reaches `INPUT` and never traverses `DOCKER-USER`. Without the `INPUT`
+jump, v6 attacks on published ports are only caught by `recidive`.
+
+**Trade-off:** the jails set `port = 0:65535`, so the `INPUT` jump matches every
+TCP port. A ban from `proxy` / `nginx-*` therefore also blocks SSH from the
+offending IP, in both families. Before this change only `recidive` did that.
 
 ### Whitelisted IPs
 
@@ -337,14 +348,17 @@ The following IPs are excluded from all jails via `ignoreip`:
 | IP / Range            | Description              |
 | --------------------- | ------------------------ |
 | `127.0.0.1/8`        | Localhost                 |
-| `89.233.108.164`     | Trusted host              |
-| `57.128.171.245`     | Trusted host              |
-| `107.155.122.53`     | Trusted host              |
-| `162.19.249.202`     | Trusted host              |
-| `208.87.129.64`      | Trusted host              |
-| `92.222.216.54`      | Trusted host              |
-| `192.168.10.1/24`    | Local network             |
-| `lgdweb.duckdns.org` | Dynamic DNS hostname      |
+| `192.168.0.0/24`     | Home LAN (workstation, homelab) |
+| `lgdweb.duckdns.org` | Admin public IP (dynamic DNS) |
+
+No host IPs are listed: servers banning each other is the normal case and must
+stay testable. `192.168.10.1/24` was removed on purpose -- it is the Docker
+bridge (`br-*`) present on every host, not a LAN. `192.168.100.0/24` (the test
+LAN) is deliberately absent so `192.168.100.1` stays bannable for the fail2ban
+harness.
+
+With the VPN on, the source IP is an AirVPN exit address, which nothing here
+covers: it can be banned.
 
 ---
 
@@ -354,22 +368,23 @@ Create a `.env` file in the project root with the following variables:
 
 | Variable         | Required | Description                                      |
 | ---------------- | -------- | ------------------------------------------------ |
-| `F2B_DEST_EMAIL` | Yes      | Destination email for Fail2ban ban notifications  |
-| `F2B_USER`       | Yes      | SSMTP username for `mail.infomaniak.com`          |
-| `F2B_PASSWORD`   | Yes      | SSMTP password for the mail account               |
-| `F2B_HOSTNAME`   | Yes      | Hostname used in SSMTP EHLO/HELO                  |
+| `SMTP_USER`      | Yes      | SMTP username for `mail.infomaniak.com` (msmtpd)  |
+| `SMTP_PASSWORD`  | Yes      | SMTP password for the mail account (msmtpd)       |
+| `HOSTNAME`       | Yes      | Host FQDN prefix, used as `SMTP_DOMAIN`           |
 
 Additional environment variables set in `docker-compose.yaml`:
 
 | Variable           | Service              | Value                   |
 | ------------------ | -------------------- | ----------------------- |
-| `TZ`               | fail2ban, manager    | `Europe/Paris`          |
+| `TZ`               | fail2ban, msmtpd, manager | `Europe/Paris`     |
 | `F2B_LOG_TARGET`   | fail2ban             | `STDOUT`                |
 | `F2B_LOG_LEVEL`    | fail2ban             | `INFO`                  |
-| `SSMTP_HOST`       | fail2ban             | `mail.infomaniak.com`   |
-| `SSMTP_PORT`       | fail2ban             | `587`                   |
-| `SSMTP_TLS`        | fail2ban             | `NO`                    |
-| `SSMTP_STARTTLS`   | fail2ban             | `YES`                   |
+
+`F2B_ACTION`, `F2B_DEST_EMAIL`, `F2B_IPTABLES_CHAIN`, `F2B_USER`,
+`F2B_PASSWORD` and `F2B_HOSTNAME` no longer appear anywhere: the image
+entrypoint never read them. `action` and `destemail` live in
+`fail2ban/data/jail.d/default.conf`, the ban chain in
+`fail2ban/data/action.d/iptables-docker.conf`.
 
 ---
 
@@ -488,12 +503,16 @@ docker logs -f fail2ban
 ### Bans are not working on Docker containers
 
 - Verify that jails targeting Docker services use `banaction = iptables-docker`,
-  which operates on the `DOCKER-USER` chain.
+  which operates on the `DOCKER-USER` and `INPUT` chains.
 - Inspect the iptables rules to confirm the `f2b-*` chains are present:
   ```bash
   sudo iptables -S DOCKER-USER | grep f2b
-  sudo ip6tables -S DOCKER-USER | grep f2b
+  sudo iptables -S INPUT | grep f2b
+  sudo ip6tables -S INPUT | grep f2b
   ```
+- Remember that chains and jumps only appear from the first ban of a jail
+  (`actionstart_on_demand` defaults to `true`): an empty `DOCKER-USER` on an
+  idle host is not an anomaly.
 - Nothing should reference the `FORWARD` chain anymore:
   ```bash
   sudo iptables -S FORWARD | grep f2b   # must be empty
