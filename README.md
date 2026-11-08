@@ -266,9 +266,9 @@ so additional containers can join it if needed.
 | Jail               | Log Source                          | Max Retries | Find Time | Ban Time | Ban Action      |
 | ------------------ | ----------------------------------- | ----------- | --------- | -------- | --------------- |
 | `sshd`             | `/var/log/auth.log` (system)        | 5           | 1 hour    | 15 min   | `action_mwl`    |
-| `proxy`            | `/srv/logs/nginx-proxy-manager/*.log` | 4         | 1 day*    | 15 min*  | `docker-action` |
-| `nginx-http-auth`  | `/srv/logs/nginx/error.log`         | 2           | 1 day*    | 15 min*  | `docker-action` |
-| `nginx-badbots`    | `/srv/logs/nginx/access.log`        | 2           | 1 day*    | 15 min*  | `docker-action` |
+| `proxy`            | `/srv/logs/nginx-proxy-manager/*.log` | 4         | 1 day*    | 15 min*  | `iptables-docker` |
+| `nginx-http-auth`  | `/srv/logs/nginx/error.log`         | 2           | 1 day*    | 15 min*  | `iptables-docker` |
+| `nginx-badbots`    | `/srv/logs/nginx/access.log`        | 2           | 1 day*    | 15 min*  | `iptables-docker` |
 | `recidive`         | `/srv/logs/fail2ban/fail2ban.log`   | 4           | 4 days    | 24 hours | `banaction_allports` |
 
 *Values marked with \* inherit from the `[DEFAULT]` section in `jail.d/default.conf`.
@@ -310,20 +310,25 @@ Identifies known malicious user agents (200+ signatures), including:
 
 ### Actions
 
-**docker-action** (`action.d/docker-action.conf`)
+**iptables-docker** (`action.d/iptables-docker.conf`)
 
-Custom iptables action designed for Docker environments:
+Thin wrapper around the stock `iptables.conf` action: it only pins
+`type = multiport`, `chain = DOCKER-USER` and `blocktype = DROP`. All command
+logic (chain creation with `-C` guards, ban/unban, `ip6tables` handling) comes
+from upstream, nothing is duplicated.
 
 ```
-Start  -> Creates f2b-<name> chain, inserts into FORWARD chain
-Ban    -> Adds DROP rule for offending IP in f2b-<name> chain
+Start  -> Creates f2b-<name> chain, jumps to it from DOCKER-USER
+Ban    -> Adds DROP rule for the offending IP in f2b-<name> chain
 Unban  -> Removes DROP rule for the IP
-Stop   -> Cleans up chain and rules
+Stop   -> Removes the jump, flushes and deletes the chain
 ```
 
-This action works with the Docker `FORWARD` chain, which is where Docker routes
-container traffic. Standard iptables `INPUT` chain rules do not affect traffic
-destined for Docker containers.
+Why `DOCKER-USER` and not `FORWARD`: it is traversed after Docker DNAT and
+before Docker's own ACCEPT rules, so a ban does cut published container ports,
+but it leaves host services alone (SSH stays reachable from a banned host, and
+`sshd`/`recidive` keep banning in `INPUT`). A ban applied directly in `FORWARD`
+with `--dports 0:65535` blocks *every* forwarded port of the host instead.
 
 ### Whitelisted IPs
 
@@ -482,12 +487,16 @@ docker logs -f fail2ban
 
 ### Bans are not working on Docker containers
 
-- Standard iptables `INPUT` rules do not apply to Docker container traffic.
-  Verify that jails targeting Docker services use `banaction = docker-action`,
-  which operates on the `FORWARD` chain.
+- Verify that jails targeting Docker services use `banaction = iptables-docker`,
+  which operates on the `DOCKER-USER` chain.
 - Inspect the iptables rules to confirm the `f2b-*` chains are present:
   ```bash
-  sudo iptables -L FORWARD -n | grep f2b
+  sudo iptables -S DOCKER-USER | grep f2b
+  sudo ip6tables -S DOCKER-USER | grep f2b
+  ```
+- Nothing should reference the `FORWARD` chain anymore:
+  ```bash
+  sudo iptables -S FORWARD | grep f2b   # must be empty
   ```
 
 ### Email notifications are not sent
