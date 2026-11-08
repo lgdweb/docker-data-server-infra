@@ -2,7 +2,11 @@ version: '3.9'
 
 services:
   msmtpd:
-    image: crazymax/msmtpd:latest
+    # Pinned: ':latest' drifted between hosts (mary still ran a 2025 image while
+    # the test hosts ran the 2026 one). This sidecar publishes no port and is
+    # therefore NOT on the mail path: Fail2ban sends to 127.0.0.1:25, which
+    # needs a host MTA (exim4). See `roles/exim/config` in the ansible repo.
+    image: crazymax/msmtpd:1.8.34
     container_name: msmtpd
     environment:
       - TZ=Europe/Paris
