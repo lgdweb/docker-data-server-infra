@@ -216,70 +216,83 @@ let Compose create `default-nw` on its own, it would get the default IPAM.
 | Timezone       | `Europe/Paris`                  |
 
 Monitors SSH and web server logs for malicious activity. Runs on the host
-network with elevated privileges to manipulate iptables rules directly. Sends
-email alerts through SSMTP via `mail.infomaniak.com:587` with STARTTLS.
+network with elevated privileges to manipulate iptables rules directly.
 
-**Log targets:** Fail2ban logs to `STDOUT` at `INFO` level, making logs
-accessible via `docker logs fail2ban`.
+**Mail path.** Notifications leave through the **host MTA** on `127.0.0.1:25`.
+There is no SMTP sidecar any more: the previous `msmtpd` published no port, so
+the host-network container could never reach it. On a host provisioned by
+Ansible, `roles/exim/config` installs and starts `exim4` (smarthost
+`mail.infomaniak.com:587`). On a bare fallback host without an MTA, the mail
+action fails and is logged — bans still work.
+
+**Log target.** `/srv/logs/fail2ban/fail2ban.log`, because the `recidive` jail
+reads that file. `STDOUT` would leave it blind. `logrotate/fail2ban` (in the
+`cffa` repository) rotates it and calls `fail2ban-client flushlogs`.
 
 ### Nginx Proxy Manager
 
-| Property       | Value                              |
-| -------------- | ---------------------------------- |
-| Image          | `jc21/nginx-proxy-manager:2.9.18`  |
-| Container name | `nginx-proxy-manager`              |
-| Ports          | `80:80`, `443:443`, `81:81`        |
-| Network        | `reverse-proxy-nw`                 |
-| Timezone       | `Europe/Paris`                     |
+| Property       | Value                                     |
+| -------------- | ----------------------------------------- |
+| Image          | `jc21/nginx-proxy-manager:2.16.0`         |
+| Container name | `nginx-proxy-manager-<host>`              |
+| Ports          | `80:80`, `443:443`, `127.0.0.1:81:81`     |
+| Networks       | `reverse-proxy-nw`, `default-nw`          |
+| Timezone       | `Europe/Paris`                            |
 
-Acts as the main reverse proxy and SSL termination point. Port 81 exposes the
-web-based admin interface for managing proxy hosts, SSL certificates (Let's
-Encrypt), redirections, and access lists. Logs are stored under
-`/srv/logs/nginx-proxy-manager/` and monitored by the Fail2ban `proxy` jail.
+Acts as the main reverse proxy and SSL termination point, and is the **only**
+entry point to Arcane. Port 81 is the admin interface, published on the loopback
+interface only — and even that bind only protects the Docker publication: NPM
+listens on `0.0.0.0:81` **inside** its container, so a proxy host pointing at
+port 81 would republish the panel on 80/443. Use an SSH tunnel; a proxy host
+`proxy.<domain>` → `nginx-proxy-manager-<host>:81` answers `200` from the
+Internet, measured. Logs are stored under `/srv/logs/nginx-proxy-manager/` and
+monitored by the Fail2ban `proxy` jail.
 
-### Nginx Main
+### Main Site
 
 | Property       | Value                        |
 | -------------- | ---------------------------- |
 | Image          | `lgdweb/nginx-test:latest`   |
-| Container name | `nginx-main`                 |
+| Container name | `main-site-<host>`           |
 | Ports          | None (behind reverse proxy)  |
-| Network        | `reverse-proxy-nw`           |
+| Networks       | `reverse-proxy-nw`, `default-nw` |
 
 The primary web server, accessible only through Nginx Proxy Manager. It does not
 expose any ports directly to the host. Access and error logs are stored under
 `/srv/logs/nginx/` and monitored by the `nginx-http-auth` and `nginx-badbots`
-jails.
+jails. `latest` is intentional for `lgdweb/*` images: their versioning is under
+direct control, unlike upstream images, which are pinned.
 
-### Portainer Agent
+### Arcane
 
-| Property       | Value                               |
-| -------------- | ----------------------------------- |
-| Image          | `portainer/agent:2.14.2-alpine`     |
-| Container name | `portainer-agent`                   |
-| Ports          | `9001:9001`                         |
-| Network        | `portainer-default`                 |
-| Restart policy | `unless-stopped`                    |
+| Property       | Value                                        |
+| -------------- | -------------------------------------------- |
+| Image          | `ghcr.io/getarcaneapp/manager:v2.17.3`       |
+| Container name | `arcane-manager-<host>`                      |
+| Ports          | **None** (reachable only through NPM, port 3552) |
+| Network        | `default-nw`                                 |
+| Volume         | `arcane-manager-data` → `/app/data`          |
+| Restart policy | `unless-stopped`                             |
 
-Lightweight agent that communicates with Portainer Server to provide container
-management capabilities. Mounts the Docker socket and volumes directory for full
-visibility into the Docker environment.
+Container management UI, replacing Portainer. The manager mounts
+`/var/run/docker.sock` and therefore manages **this** host directly; that is why
+there is no agent here. An agent needs an `AGENT_TOKEN` obtained from the API at
+runtime, which a static compose file cannot provide. Ansible does deploy an agent
+on every host it manages, master included — that is a different topology, and
+this file does not try to reproduce it.
 
-### Portainer Server
+Required environment variables (see `example.env`): `APP_URL`, `ENCRYPTION_KEY`,
+`ADMIN_STATIC_API_KEY`. Notes that cost a session to learn:
 
-| Property       | Value                                    |
-| -------------- | ---------------------------------------- |
-| Image          | `portainer/portainer-ce:2.14.2-alpine`   |
-| Container name | `portainer-server`                       |
-| Ports          | `9000:9000`, `9443:9443`, `8000:8000`    |
-| Networks       | `portainer-default`, `reverse-proxy-nw`  |
-| Restart policy | `unless-stopped`                         |
-| Security       | `no-new-privileges:true`                 |
-
-Web-based Docker management interface. Port 9443 serves the HTTPS UI, port 9000
-the HTTP UI, and port 8000 is used for edge agent communication. Connected to
-both networks so it can be proxied through Nginx Proxy Manager while
-communicating with its agent on the internal network.
+- `ENCRYPTION_KEY` is **not** reconciled: changing it on a manager that already
+  holds data makes the database unreadable. `ADMIN_STATIC_API_KEY` *is*
+  reconciled and can be rotated.
+- `ADMIN_STATIC_API_KEY` must be `arc_` followed by 64 hex characters. Any other
+  format is rejected at startup (`invalid API key`) and every authenticated call
+  answers `401`, while the container still reports healthy.
+- The default account is `arcane` / `arcane-admin` with a forced password change,
+  created on first start only. There is no environment variable for it.
+- The proxy host must target port **3552** with WebSocket enabled.
 
 ---
 
