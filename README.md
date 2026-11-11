@@ -1,9 +1,19 @@
 # Docker Data Server Infrastructure
 
-A Docker Compose infrastructure stack for managing containerized services on a
-data/web server. It provides a reverse proxy with SSL termination, a web server,
-container management via Portainer, and comprehensive intrusion prevention
-through Fail2ban with custom jails and filters tailored for Docker environments.
+A Docker Compose stack for a data/web server: a reverse proxy with SSL
+termination, a web server, Fail2ban with custom Docker-aware jails, and Arcane as
+the container management UI.
+
+**Fallback repository.** The managed fleet is provisioned by
+[ansibleToolByTuxi](https://github.com/TituxMetal/ansibleToolByTuxi), which is the
+source of truth for the system, Docker, Nginx Proxy Manager, Fail2ban and Arcane.
+This repository is kept as a **standalone fallback**: it mounts a server without
+Ansible, or repairs one that is already broken. It is not amputated when a
+service moves to Ansible — only kept in sync.
+
+The `fail2ban/data/` tree is also consumed by Ansible: the `dockerServices/dataStructure`
+role clones this repository on every host and copies it to `/srv/fail2ban/data`.
+Changes to those files reach the fleet only after a push on `main`.
 
 ## Table of Contents
 
