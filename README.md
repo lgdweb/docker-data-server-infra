@@ -514,33 +514,36 @@ docker compose ps
 ### Fail2ban operations
 
 ```bash
+# The container is fail2ban-<host>: resolve it once.
+F2B=$(docker ps -qf name=^/fail2ban- | head -1)
+
 # Check overall Fail2ban status
-docker exec fail2ban fail2ban-client status
+docker exec "$F2B" fail2ban-client status
 
 # Check a specific jail
-docker exec fail2ban fail2ban-client status sshd
-docker exec fail2ban fail2ban-client status proxy
-docker exec fail2ban fail2ban-client status nginx-http-auth
-docker exec fail2ban fail2ban-client status nginx-badbots
-docker exec fail2ban fail2ban-client status recidive
+docker exec "$F2B" fail2ban-client status sshd
+docker exec "$F2B" fail2ban-client status proxy
+docker exec "$F2B" fail2ban-client status nginx-http-auth
+docker exec "$F2B" fail2ban-client status nginx-badbots
+docker exec "$F2B" fail2ban-client status recidive
 
 # Manually ban an IP in a jail
-docker exec fail2ban fail2ban-client set proxy banip 1.2.3.4
+docker exec "$F2B" fail2ban-client set proxy banip 1.2.3.4
 
 # Unban an IP from a jail
-docker exec fail2ban fail2ban-client set proxy unbanip 1.2.3.4
+docker exec "$F2B" fail2ban-client set proxy unbanip 1.2.3.4
 
 # Unban an IP from all jails
-docker exec fail2ban fail2ban-client unban 1.2.3.4
+docker exec "$F2B" fail2ban-client unban 1.2.3.4
 
 # Unban all IPs
-docker exec fail2ban fail2ban-client unban --all
+docker exec "$F2B" fail2ban-client unban --all
 
 # Reload Fail2ban configuration
-docker exec fail2ban fail2ban-client reload
+docker exec "$F2B" fail2ban-client reload
 
 # Test a filter against a log file
-docker exec fail2ban fail2ban-regex /srv/logs/nginx-proxy-manager/fallback_access.log /data/filter.d/proxy.conf
+docker exec "$F2B" fail2ban-regex /srv/logs/nginx-proxy-manager/fallback_access.log /data/filter.d/proxy.conf
 ```
 
 ### Firewall inspection
