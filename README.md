@@ -23,10 +23,10 @@ Changes to those files reach the fleet only after a push on `main`.
 - [Services](#services)
   - [Fail2ban](#fail2ban)
   - [Nginx Proxy Manager](#nginx-proxy-manager)
-  - [Nginx Main](#nginx-main)
-  - [Portainer Agent](#portainer-agent)
-  - [Portainer Server](#portainer-server)
+  - [Main Site](#main-site)
+  - [Arcane](#arcane)
 - [Network Architecture](#network-architecture)
+- [Log Rotation](#log-rotation)
 - [Security Architecture](#security-architecture)
   - [Jails](#jails)
   - [Filters](#filters)
@@ -52,7 +52,7 @@ Changes to those files reach the fleet only after a push on `main`.
                              |
                +-------------+-------------+
                |             |             |
-          Port 80/443     Port 81     Port 22 (SSH)
+          Port 80/443   127.0.0.1:81  Port 22 (SSH)
                |             |
      +---------+---------+   |
      | Nginx Proxy       +---+
@@ -60,23 +60,24 @@ Changes to those files reach the fleet only after a push on `main`.
      | (reverse proxy)   |
      +--------+----------+
               |
-     reverse-proxy-nw
+     reverse-proxy-nw + default-nw
               |
-     +--------+----------+        portainer-default
-     |                    |              |
-  +--+---+          +-----+------+  +---+--------+
-  | Nginx|          | Portainer  |  | Portainer  |
-  | Main |          | Server     +--+ Agent      |
-  +------+          +-----+------+  +------------+
-                          |
-                   Port 9000/9443/8000
+     +--------+---------+
+     |                  |
+  +--+-----+     +------+------+
+  | Main   |     |   Arcane    |
+  | Site   |     |  (manager)  |
+  +--------+     +------+------+
+                        |
+                 /var/run/docker.sock
 ```
 
 **Traffic flow:** All inbound traffic passes through the host firewall where
 Fail2ban inspects and filters requests. Legitimate traffic reaches Nginx Proxy
 Manager, which terminates SSL and forwards requests to backend services over the
-`reverse-proxy-nw` Docker network. Portainer components communicate over their
-own internal `portainer-default` network.
+`reverse-proxy-nw` Docker network. Arcane publishes **no port**: it is reachable
+only through Nginx Proxy Manager (`arcane-manager-<host>:3552`), and it manages
+this host through the Docker socket mounted in its container.
 
 ---
 
