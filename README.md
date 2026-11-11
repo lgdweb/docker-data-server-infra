@@ -606,28 +606,57 @@ docker logs -f fail2ban
 
 ### Email notifications are not sent
 
-- Verify the `.env` file contains valid `F2B_USER`, `F2B_PASSWORD`, and
-  `F2B_HOSTNAME` values.
-- Check SSMTP connectivity from inside the container:
+- Verify the host MTA listens on the loopback interface:
   ```bash
-  docker exec fail2ban cat /etc/ssmtp/ssmtp.conf
+  ss -lntp | grep ':25 '
+  systemctl is-active exim4
+  ```
+  `roles/exim/config` (Ansible) starts and enables it; on a bare host, install and
+  configure an MTA yourself. There is no SMTP sidecar any more.
+- Check that the container reaches it (the Fail2ban container uses the host
+  network, so `127.0.0.1:25` is the host):
+  ```bash
+  docker exec "$F2B" nc -z 127.0.0.1 25 && echo OK
   ```
 - Review Fail2ban logs for mail-related errors:
   ```bash
-  docker logs fail2ban 2>&1 | grep -i mail
+  docker logs "$F2B" 2>&1 | grep -i mail
   ```
+  A `can't connect to remote host (127.0.0.1): Connection refused` line means the
+  MTA is down — the bans themselves still work.
 
 ### Nginx Proxy Manager admin panel is inaccessible
 
-- Confirm port 81 is open and not blocked by a host firewall.
-- Check container status: `docker compose ps manager`
-- Review logs: `docker compose logs manager`
-- Default login credentials are `admin@example.com` / `changeme` on first run.
-
-### "Network reverse-proxy-nw declared as external but could not be found"
-
-- Create the external network before starting the stack:
+- The panel is published on `127.0.0.1:81` only. From a remote machine, open a
+  tunnel first:
   ```bash
+  ssh -N -L 8181:127.0.0.1:81 <host>
+  ```
+- Check container status: `docker compose ps nginx-proxy-manager`
+- Review logs: `docker compose logs nginx-proxy-manager`
+- Default login credentials are `admin@example.com` / `changeme` on first run.
+- Do **not** create a proxy host pointing at port 81 to "reach it from
+  anywhere": NPM listens on `0.0.0.0:81` inside its container, so such a host
+  publishes the panel on 80/443. Measured: it answers `200` from the Internet.
+
+### Arcane answers 401 or 502 through the proxy
+
+- `502` from openresty: the proxy host targets the wrong port. The manager
+  listens on **3552**; `3553` is the agent port.
+- `401 invalid API key`: `ADMIN_STATIC_API_KEY` is not `arc_` + 64 hex. The
+  manager still starts and logs
+  `WRN Failed to reconcile default admin API key`. Regenerate the key and
+  recreate the container.
+- `web socket` errors in the UI: enable WebSocket support on the proxy host.
+
+### "Network default-nw declared as external but could not be found"
+
+- Create both networks before starting the stack, with the exact parameters
+  given in [External Docker networks](#external-docker-networks):
+  ```bash
+  docker network create --driver bridge \
+    --subnet 192.168.10.0/24 --gateway 192.168.10.1 --ip-range 192.168.10.0/26 \
+    default-nw
   docker network create reverse-proxy-nw
   ```
 
@@ -635,22 +664,13 @@ docker logs -f fail2ban
 
 - Unban it immediately:
   ```bash
-  docker exec fail2ban fail2ban-client unban <IP>
+  docker exec "$F2B" fail2ban-client unban <IP>
   ```
 - Add the IP to the `ignoreip` list in `fail2ban/data/jail.d/default.conf`, then
   reload:
   ```bash
-  docker exec fail2ban fail2ban-client reload
+  docker exec "$F2B" fail2ban-client reload
   ```
-
-### Portainer cannot connect to the agent
-
-- Verify both containers are on the `portainer-default` network:
-  ```bash
-  docker network inspect portainer-default
-  ```
-- Confirm port 9001 is accessible between the containers.
-- Check agent logs: `docker compose logs agent`
 
 ---
 
