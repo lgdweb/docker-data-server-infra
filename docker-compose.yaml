@@ -18,6 +18,11 @@ services:
       # /srv/logs/fail2ban/fail2ban.log. STDOUT would leave that jail blind.
       - F2B_LOG_TARGET=/srv/logs/fail2ban/fail2ban.log
       - F2B_LOG_LEVEL=INFO
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
       # No F2B_ACTION / F2B_DEST_EMAIL here: the image entrypoint does not read
       # them. `action` and `destemail` live in fail2ban/data/jail.d/default.conf.
       # No SMTP sidecar either: mail leaves through the host MTA on 127.0.0.1:25
@@ -43,10 +48,20 @@ services:
       - reverse-proxy-nw
       - default-nw
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
   main-site:
     image: lgdweb/nginx-test:latest
     container_name: 'main-site-${HOSTNAME}'
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
     networks:
       - reverse-proxy-nw
       - default-nw
@@ -80,6 +95,11 @@ services:
     networks:
       - default-nw
     restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
 
 volumes:
   arcane-manager-data:
