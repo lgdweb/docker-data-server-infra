@@ -474,15 +474,19 @@ All persistent data is stored under `/srv/` on the host:
 | Host Path                                  | Container Path           | Service             | Access |
 | ------------------------------------------ | ------------------------ | ------------------- | ------ |
 | `/srv/fail2ban/data`                       | `/data`                  | fail2ban            | rw     |
-| `/srv/logs`                                | `/srv/logs`              | fail2ban            | ro     |
+| `/srv/logs`                                | `/srv/logs`              | fail2ban            | rw     |
 | `/var/log`                                 | `/var/log`               | fail2ban            | ro     |
 | `/srv/nginx-proxy-manager/data`            | `/data`                  | nginx-proxy-manager | rw     |
 | `/srv/nginx-proxy-manager/data/letsencrypt`| `/etc/letsencrypt`       | nginx-proxy-manager | rw     |
 | `/srv/logs/nginx-proxy-manager`            | `/data/logs`             | nginx-proxy-manager | rw     |
-| `/srv/logs/nginx`                          | `/var/log/nginx`         | nginx-main          | rw     |
-| `/srv/portainer/data`                      | `/data`                  | portainer-server    | rw     |
-| `/var/run/docker.sock`                     | `/var/run/docker.sock`   | agent, server       | rw     |
-| `/var/lib/docker/volumes`                  | `/var/lib/docker/volumes`| agent, server       | rw     |
+| `/srv/logs/nginx`                          | `/var/log/nginx`         | main-site           | rw     |
+| `/var/run/docker.sock`                     | `/var/run/docker.sock`   | arcane              | rw     |
+| volume `arcane-manager-data`               | `/app/data`              | arcane              | rw     |
+
+Arcane is the only service that keeps its state in a **named volume** rather
+than under `/srv`. The volume carries a fixed `name:` so that renaming the
+compose project cannot orphan the manager database. Ansible uses
+`arcane-manager-data-<host>`, so the two never collide.
 
 ---
 
