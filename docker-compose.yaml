@@ -36,12 +36,14 @@ services:
       - NET_RAW
     volumes:
       - '/srv/fail2ban/data:/data'
-      - '/srv/logs:/srv/logs:ro'
+      - '/srv/logs:/srv/logs'
       - '/var/log:/var/log:ro'
     restart: unless-stopped
     environment:
       - TZ=Europe/Paris
-      - F2B_LOG_TARGET=STDOUT
+      # The log file is the source of the `recidive` jail: it reads
+      # /srv/logs/fail2ban/fail2ban.log. STDOUT would leave that jail blind.
+      - F2B_LOG_TARGET=/srv/logs/fail2ban/fail2ban.log
       - F2B_LOG_LEVEL=INFO
       # No F2B_ACTION / F2B_DEST_EMAIL here: the image entrypoint does not read
       # them. `action` and `destemail` live in fail2ban/data/jail.d/default.conf.
