@@ -1,7 +1,7 @@
 services:
   fail2ban:
     image: crazymax/fail2ban:1.1.1
-    container_name: fail2ban
+    container_name: 'fail2ban-${HOSTNAME}'
     network_mode: 'host'
     privileged: true
     cap_add:
@@ -23,9 +23,9 @@ services:
       # No SMTP sidecar either: mail leaves through the host MTA on 127.0.0.1:25
       # (exim4, installed by roles/exim/config). The msmtpd sidecar published no
       # port, so this host-network container could never reach it.
-  manager:
+  nginx-proxy-manager:
     image: jc21/nginx-proxy-manager:2.16.0
-    container_name: nginx-proxy-manager
+    container_name: 'nginx-proxy-manager-${HOSTNAME}'
     environment:
       TZ: 'Europe/Paris'
     ports:
@@ -43,9 +43,9 @@ services:
       - reverse-proxy-nw
       - default-nw
     restart: unless-stopped
-  main:
+  main-site:
     image: lgdweb/nginx-test:latest
-    container_name: nginx-main
+    container_name: 'main-site-${HOSTNAME}'
     networks:
       - reverse-proxy-nw
       - default-nw
