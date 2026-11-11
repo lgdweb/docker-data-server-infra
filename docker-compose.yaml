@@ -46,6 +46,7 @@ services:
   main-site:
     image: lgdweb/nginx-test:latest
     container_name: 'main-site-${HOSTNAME}'
+    restart: unless-stopped
     networks:
       - reverse-proxy-nw
       - default-nw
