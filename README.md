@@ -208,7 +208,7 @@ let Compose create `default-nw` on its own, it would get the default IPAM.
 | Property       | Value                           |
 | -------------- | ------------------------------- |
 | Image          | `crazymax/fail2ban:1.1.1`       |
-| Container name | `fail2ban`                      |
+| Container name | `fail2ban-<host>`               |
 | Network mode   | `host`                          |
 | Capabilities   | `NET_ADMIN`, `NET_RAW`          |
 | Privileged     | Yes                             |
