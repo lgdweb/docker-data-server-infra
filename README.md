@@ -438,27 +438,32 @@ covers: it can be banned.
 
 ## Environment Variables
 
-Create a `.env` file in the project root with the following variables:
+Create a `.env` file in the project root (`cp example.env .env`):
 
-| Variable         | Required | Description                                      |
-| ---------------- | -------- | ------------------------------------------------ |
-| `SMTP_USER`      | Yes      | SMTP username for `mail.infomaniak.com` (msmtpd)  |
-| `SMTP_PASSWORD`  | Yes      | SMTP password for the mail account (msmtpd)       |
-| `HOSTNAME`       | Yes      | Host FQDN prefix, used as `SMTP_DOMAIN`           |
+| Variable                | Required | Description                                              |
+| ----------------------- | -------- | -------------------------------------------------------- |
+| `HOSTNAME`              | No       | Suffix of the container names. Falls back to the shell `$HOSTNAME` |
+| `APP_URL`               | Yes      | Public URL of the Arcane manager                          |
+| `ENCRYPTION_KEY`        | Yes      | `openssl rand -hex 32`; never change it once data exists  |
+| `ADMIN_STATIC_API_KEY`  | Yes      | `arc_` + 64 hex characters                                |
+| `TRUSTED_PROXIES`       | No       | CIDR of `default-nw` (default `192.168.10.0/26`)          |
 
-Additional environment variables set in `docker-compose.yaml`:
+Variables set in `docker-compose.yaml` itself:
 
-| Variable           | Service              | Value                   |
-| ------------------ | -------------------- | ----------------------- |
-| `TZ`               | fail2ban, msmtpd, manager | `Europe/Paris`     |
-| `F2B_LOG_TARGET`   | fail2ban             | `STDOUT`                |
-| `F2B_LOG_LEVEL`    | fail2ban             | `INFO`                  |
+| Variable           | Service              | Value                              |
+| ------------------ | -------------------- | ---------------------------------- |
+| `TZ`               | all services         | `Europe/Paris`                     |
+| `F2B_LOG_TARGET`   | fail2ban             | `/srv/logs/fail2ban/fail2ban.log`  |
+| `F2B_LOG_LEVEL`    | fail2ban             | `INFO`                             |
+| `PUID` / `PGID`    | arcane               | `1000`                             |
 
 `F2B_ACTION`, `F2B_DEST_EMAIL`, `F2B_IPTABLES_CHAIN`, `F2B_USER`,
-`F2B_PASSWORD` and `F2B_HOSTNAME` no longer appear anywhere: the image
-entrypoint never read them. `action` and `destemail` live in
+`F2B_PASSWORD`, `F2B_HOSTNAME` and the `SMTP_*` relay settings no longer appear
+anywhere: the image entrypoint never read the first group, and the mail relay
+sidecar they fed is gone. `action` and `destemail` live in
 `fail2ban/data/jail.d/default.conf`, the ban chain in
-`fail2ban/data/action.d/iptables-docker.conf`.
+`fail2ban/data/action.d/iptables-docker.conf`, and the MTA is the host's
+exim4 on `127.0.0.1:25`.
 
 ---
 
