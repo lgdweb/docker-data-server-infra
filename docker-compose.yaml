@@ -1,5 +1,3 @@
-version: '3.9'
-
 services:
   msmtpd:
     # Pinned: ':latest' drifted between hosts (mary still ran a 2025 image while
