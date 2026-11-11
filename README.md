@@ -312,6 +312,29 @@ cannot drift.
 
 ---
 
+## Log Rotation
+
+Three mechanisms, in this order of precedence:
+
+1. **Docker's `json-file` driver**, bounded in `docker-compose.yaml`
+   (`max-size: 10m`, `max-file: '3'`). It is the reliable one: it belongs to the
+   container, so it follows the service onto any host.
+2. **`logrotate`** (`cffa` repository, deployed by Ansible to
+   `/etc/logrotate.d/`): `docker-container`, `fail2ban`, `nginx`. A safety net for
+   hosts that run containers with no `logging:` block. Both mechanisms coexist
+   harmlessly: once the driver caps a file, `copytruncate` has almost nothing to
+   do.
+3. **The service's own configuration** when it writes into a volume rather than
+   to stdout. ClickHouse is the only case here: its logs live in the
+   `event-logs` volume and are bounded by `clickhouse/logs.xml`, not by Docker.
+
+Measured on `laura`, the host that grew the big files: all Docker container logs
+together were **39 MB** (largest single file 5.8 MB), while the ClickHouse volume
+held **1.7 GB**. Big logs on this infrastructure are a *service* configuration
+problem, not a Docker rotation problem.
+
+---
+
 ## Security Architecture
 
 ### Jails
