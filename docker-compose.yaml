@@ -1,3 +1,14 @@
+# Fallback stack for a data/web server, usable without Ansible.
+#
+# `ansibleToolByTuxi` is the source of truth: it deploys the same services with
+# `roles/docker/container` and owns the real configuration. This file exists to
+# mount a bare server, or to repair one whose Ansible provisioning is not
+# available. Do not run it on a host that Ansible already manages: the service
+# and container names collide.
+#
+# The `default-nw` and `reverse-proxy-nw` networks are external, like in the
+# Ansible roles: create them first (see README, "External Docker networks").
+
 services:
   fail2ban:
     image: crazymax/fail2ban:1.1.1
