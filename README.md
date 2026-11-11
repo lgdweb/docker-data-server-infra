@@ -86,9 +86,9 @@ this host through the Docker socket mounted in its container.
 | Requirement        | Minimum Version | Notes                           |
 | ------------------ | --------------- | ------------------------------- |
 | Docker Engine      | 20.10+          | With Docker CLI                 |
-| Docker Compose     | 1.29+ or v2     | Compose file version 3.9        |
+| Docker Compose     | v2              | The `docker compose` plugin     |
 | Linux host         | --              | iptables support required        |
-| Open ports         | 80, 443, 81    | Plus 9000, 9443, 8000, 9001     |
+| Open ports         | 80, 443         | 81 stays on the loopback (`127.0.0.1:81`) |
 
 ### Directory structure
 
@@ -97,19 +97,32 @@ Create the following directories on the host before starting the stack:
 ```bash
 sudo mkdir -p /srv/fail2ban/data
 sudo mkdir -p /srv/nginx-proxy-manager/data
-sudo mkdir -p /srv/portainer/data
 sudo mkdir -p /srv/logs/fail2ban
 sudo mkdir -p /srv/logs/nginx
 sudo mkdir -p /srv/logs/nginx-proxy-manager
 ```
 
-### External Docker network
+No directory is needed for Arcane: its data lives in the `arcane-manager-data`
+named volume.
 
-The `reverse-proxy-nw` network must exist before running the stack:
+### External Docker networks
+
+Two networks must exist before running the stack. They are `external` so that
+other Compose projects can join them:
 
 ```bash
+# Container network. The iprange is not cosmetic: TRUSTED_PROXIES and the
+# `reverse-proxy-nw` peering of the Ansible roles both assume it.
+docker network create --driver bridge \
+  --subnet 192.168.10.0/24 --gateway 192.168.10.1 --ip-range 192.168.10.0/26 \
+  default-nw
+
 docker network create reverse-proxy-nw
 ```
+
+`roles/docker/network` creates the same two networks on Ansible-provisioned hosts,
+with the same parameters. Creating them twice is a no-op only if they match: never
+let Compose create `default-nw` on its own, it would get the default IPAM.
 
 ---
 
@@ -125,26 +138,30 @@ docker network create reverse-proxy-nw
 2. **Create the required directories:**
 
    ```bash
-   sudo mkdir -p /srv/{fail2ban/data,nginx-proxy-manager/data,portainer/data}
+   sudo mkdir -p /srv/{fail2ban/data,nginx-proxy-manager/data}
    sudo mkdir -p /srv/logs/{fail2ban,nginx,nginx-proxy-manager}
    ```
 
-3. **Create the external network:**
+3. **Create the external networks:**
 
    ```bash
+   docker network create --driver bridge \
+     --subnet 192.168.10.0/24 --gateway 192.168.10.1 --ip-range 192.168.10.0/26 \
+     default-nw
    docker network create reverse-proxy-nw
    ```
 
 4. **Configure environment variables:**
 
    ```bash
-   cat > .env << 'EOF'
-   SMTP_USER=your-smtp-user@example.com
-   SMTP_PASSWORD=your-smtp-password
-   HOSTNAME=your-hostname
-   EOF
+   cp example.env .env
    chmod 600 .env
+   # then fill in APP_URL, ENCRYPTION_KEY and ADMIN_STATIC_API_KEY
    ```
+
+   Every variable is documented in `example.env`. `docker compose config`
+   refuses to render the stack while `APP_URL`, `ENCRYPTION_KEY` or
+   `ADMIN_STATIC_API_KEY` is empty — that is deliberate.
 
    `destemail`/`sender` are not environment variables: they live in
    `fail2ban/data/jail.d/default.conf`.
@@ -169,9 +186,18 @@ docker network create reverse-proxy-nw
 
 8. **Access the services:**
 
-   - Nginx Proxy Manager admin: `http://<server-ip>:81`
-     (default credentials: `admin@example.com` / `changeme`)
-   - Portainer: `https://<server-ip>:9443`
+   - Arcane: `https://arcane.<domain>` once a proxy host points at
+     `arcane-manager-<host>:3552`, with **WebSocket enabled** (`3553` is the
+     agent port, not the manager: a wrong port gives a `502` from openresty).
+   - Nginx Proxy Manager admin: **through an SSH tunnel**, never through a proxy
+     host:
+
+     ```bash
+     ssh -N -L 8181:127.0.0.1:81 <host>
+     # then http://127.0.0.1:8181
+     ```
+
+     Default credentials: `admin@example.com` / `changeme`.
 
 ---
 
