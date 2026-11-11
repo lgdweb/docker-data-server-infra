@@ -301,13 +301,14 @@ Required environment variables (see `example.env`): `APP_URL`, `ENCRYPTION_KEY`,
 | Network            | Type       | Purpose                                       |
 | ------------------ | ---------- | --------------------------------------------- |
 | `reverse-proxy-nw` | External   | Connects reverse proxy to backend services     |
-| `portainer-default`| Internal   | Isolated communication between Portainer components (attachable) |
+| `default-nw`       | External   | Internal communication, subnet `192.168.10.0/24`, iprange `192.168.10.0/26` |
 | `host`             | Host       | Fail2ban operates on the host network stack    |
 
-The `reverse-proxy-nw` network must be created manually before starting the
-stack because it may be shared with other Docker Compose projects. The
-`portainer-default` network is created automatically and marked as `attachable`
-so additional containers can join it if needed.
+Both bridge networks are created **outside** the stack (see
+[External Docker networks](#external-docker-networks)): they are shared with the
+other Compose projects and with the Ansible roles. Compose never creates them on
+its own, so the `default-nw` iprange — the value `TRUSTED_PROXIES` relies on —
+cannot drift.
 
 ---
 
