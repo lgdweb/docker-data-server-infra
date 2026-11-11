@@ -1,34 +1,7 @@
 services:
-  msmtpd:
-    # Pinned: ':latest' drifted between hosts (mary still ran a 2025 image while
-    # the test hosts ran the 2026 one). This sidecar publishes no port and is
-    # therefore NOT on the mail path: Fail2ban sends to 127.0.0.1:25, which
-    # needs a host MTA (exim4). See `roles/exim/config` in the ansible repo.
-    image: crazymax/msmtpd:1.8.34
-    container_name: msmtpd
-    environment:
-      - TZ=Europe/Paris
-      - SMTP_HOST=mail.infomaniak.com
-      - SMTP_PORT=587
-      - SMTP_TLS=on
-      - SMTP_STARTTLS=on
-      - SMTP_AUTH=on
-      - SMTP_USER=${SMTP_USER}
-      - SMTP_PASSWORD=${SMTP_PASSWORD}
-      - SMTP_DOMAIN=${HOSTNAME}.lgdweb.ovh
-    restart: unless-stopped
-    healthcheck:
-      test: ['CMD', 'nc', '-z', '127.0.0.1', '2500']
-      interval: 10s
-      timeout: 5s
-      retries: 3
-
   fail2ban:
     image: crazymax/fail2ban:1.1.1
     container_name: fail2ban
-    depends_on:
-      msmtpd:
-        condition: service_healthy
     network_mode: 'host'
     privileged: true
     cap_add:
@@ -47,6 +20,9 @@ services:
       - F2B_LOG_LEVEL=INFO
       # No F2B_ACTION / F2B_DEST_EMAIL here: the image entrypoint does not read
       # them. `action` and `destemail` live in fail2ban/data/jail.d/default.conf.
+      # No SMTP sidecar either: mail leaves through the host MTA on 127.0.0.1:25
+      # (exim4, installed by roles/exim/config). The msmtpd sidecar published no
+      # port, so this host-network container could never reach it.
   manager:
     image: jc21/nginx-proxy-manager:2.16.0
     container_name: nginx-proxy-manager
